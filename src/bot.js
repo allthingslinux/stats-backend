@@ -10,10 +10,13 @@ const { expressMain } = require('./express');
 // Initialize Prisma Client
 const prisma = new PrismaClient();
 
-// Utility: Generate SHA-256 hash for anonymization
+// Utility: Encrypt user ID
 function anonymousId(id) {
-    const hash = crypto.createHash('sha256').update(String(id)).digest('hex');
-    return hash;
+    const encryptionKey = process.env.ENCRYPTION_KEY;
+    const cipher = crypto.createCipher('aes-256-cbc', encryptionKey);
+    let encrypted = cipher.update(id.toString(), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return encrypted;
 }
 
 // Utility: Update user in the database or create if not exists
@@ -143,6 +146,9 @@ Commands:
                     message.channel.send(`Anonymous mode set to false`);
                 }
                 break;
+
+            case 'optout':
+
 
             default:
                 message.channel.send(`Unknown command. Type **${process.env.PREFIX}help** for help.`);
