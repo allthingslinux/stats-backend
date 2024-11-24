@@ -8,7 +8,7 @@
     "bot": "node src/bot.js"
   },
   "author": "",
-  "license": "ISC",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "discord.js": "^14.16.3",
