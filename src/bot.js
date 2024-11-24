@@ -137,10 +137,10 @@ Commands:
                         data: {
                             id: BigInt(message.author.id),
                             username: message.author.username,
-                            anonymous: true,
+                            anonymous: false,
                         },
                     });
-                    message.channel.send(`Anonymous mode set to true`);
+                    message.channel.send(`Anonymous mode set to false`);
                 }
                 break;
 
