@@ -1,0 +1,5 @@
+docker-compose.yml
+data/graph.gexf
+postgres-data/
+.env
+node_modules/

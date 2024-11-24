@@ -1,0 +1,21 @@
+{
+  "name": "stats-backend",
+  "version": "1.0.0",
+  "description": "Backend for stats.atl.dev",
+  "main": "src/bot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "bot": "node src/bot.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "graphology": "^0.25.4",
+    "graphology-gexf": "^0.13.2",
+    "prisma": "^5.22.0"
+  }
+}

@@ -1,0 +1,6 @@
+*
+!src/
+!prisma/
+!.env
+!package.json
+!package-lock.json
