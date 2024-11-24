@@ -13,10 +13,13 @@ const prisma = new PrismaClient();
 // Utility: Encrypt user ID
 function anonymousId(id) {
     const encryptionKey = process.env.ENCRYPTION_KEY;
-    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey), Buffer.from(encryptionKey));
+    // encryption key is 32 base64 characters
+    // needs to return the same thing every time
+    const iv = Buffer.alloc(16, 0); // Initialization vector.
+    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey, 'base64'), iv);
     let encrypted = cipher.update(id.toString());
     encrypted = Buffer.concat([encrypted, cipher.final()]);
-    return encrypted.toString('hex');
+    return encrypted.toString('base64');
 }
 
 // Utility: Update user in the database or create if not exists
