@@ -13,7 +13,6 @@ const prisma = new PrismaClient();
 // Utility: Generate SHA-256 hash for anonymization
 function anonymousId(id) {
     const hash = crypto.createHash('sha256').update(String(id)).digest('hex');
-    console.log(`Hashed ${id} to ${hash}`); // Debugging to show hashing process
     return hash;
 }
 
@@ -29,7 +28,7 @@ async function updateUserLookup(prisma, user) {
 
 // Counter for mentions processed
 let mentionsCounter = 0; // Reset counter
-const MENTIONS_THRESHOLD = 5; // Generate graph every 15 mentions
+const MENTIONS_THRESHOLD = 25; // Generate graph every 15 mentions
 
 // Generate the GEXF graph
 async function generateGEXF() {
