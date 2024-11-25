@@ -120,7 +120,7 @@ Commands:
 - **help**: Show this message
 - **ping**: Check bot latency
 - **toggleanonymous**: Toggle anonymous mode for yourself in the graph
-- **fulloptout**: Opt out of the graph entirely **(Please only use this if you REALLY need to)**
+- **toggleoptout**: Toggle opting out of the graph entirely **(Please only use this if you REALLY need to)**
                 `);
                 break;
 
@@ -151,7 +151,7 @@ Commands:
                 }
                 break;
 
-            case 'fulloptout':
+            case 'toggleoptout':
                 const user2 = await prisma.userLookup.findUnique({
                     where: { id: BigInt(message.author.id) },
                 });
