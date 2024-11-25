@@ -120,6 +120,7 @@ Commands:
 - **help**: Show this message
 - **ping**: Check bot latency
 - **toggleanonymous**: Toggle anonymous mode for yourself in the graph
+- **fulloptout**: Opt out of the graph entirely **(Please only use this if you REALLY need to)**
                 `);
                 break;
 
@@ -150,7 +151,32 @@ Commands:
                 }
                 break;
 
-            case 'optout':
+            case 'fulloptout':
+                const user2 = await prisma.userLookup.findUnique({
+                    where: { id: BigInt(message.author.id) },
+                });
+
+                if (user2) {
+                    const updated2 = await prisma.userLookup.update({
+                        where: { id: BigInt(message.author.id) },
+                        data: { fullOptOut: !user2.fullOptOut },
+                    });
+                    if (updated2.fullOptOut) {
+                        message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
+                    } else {
+                        message.channel.send(`Full opt-out set to false. **Thank you for contributing to the graph!**`);
+                    }
+                } else {
+                    await prisma.userLookup.create({
+                        data: {
+                            id: BigInt(message.author.id),
+                            username: message.author.username,
+                            fullOptOut: true,
+                        },
+                    });
+                    message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
+                }
+                break;
 
 
             default:
