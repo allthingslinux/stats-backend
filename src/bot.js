@@ -177,7 +177,32 @@ Commands:
                     message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
                 }
                 break;
+            
+            case 'forcetoggleanonymous': // i ntended to toggle bots anonymous mode
+                if (message.author.id !== process.env.BOT_OWNER) {
+                    message.channel.send('You are not authorized to use this command.');
+                    return;
+                }
 
+                if (args.length === 0) {
+                    message.channel.send('Please provide a user ID.');
+                    return;
+                }
+
+                const userId = args[0];
+
+                const user3 = await prisma.userLookup.findUnique({
+                    where: { id: BigInt(userId) },
+                });
+
+                if (user3) {
+                    const updated3 = await prisma.userLookup.update({
+                        where: { id: BigInt(userId) },
+                        data: { anonymous: !user3.anonymous },
+                    });
+                    message.channel.send(`Anonymous mode set to ${updated3.anonymous}`);
+                }
+                break;
 
             default:
                 message.channel.send(`Unknown command. Type **${process.env.PREFIX}help** for help.`);
