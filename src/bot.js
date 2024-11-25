@@ -149,6 +149,10 @@ Commands:
                     });
                     message.channel.send(`Anonymous mode set to false`);
                 }
+
+                // update graph
+                await generateGEXF();
+
                 break;
 
             case 'toggleoptout':
