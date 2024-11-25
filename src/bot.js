@@ -178,7 +178,7 @@ Commands:
                 }
                 break;
             
-            case 'forcetoggleanonymous': // i ntended to toggle bots anonymous mode
+            case 'forcetoggleanonymous': // intended to toggle bots anonymous mode
                 if (message.author.id !== process.env.BOT_OWNER) {
                     message.channel.send('You are not authorized to use this command.');
                     return;
