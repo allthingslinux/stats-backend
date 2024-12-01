@@ -5,7 +5,6 @@ const port = 8000
 const statsTemplate = `Statistics
 ==========
 Total users: <2>
-Total mentions tracked: <1>
 Total unique mentions: <3>
 Total non-anonymous users: <4>
 Total anonymous users: <5>
@@ -26,13 +25,8 @@ function expressMain(prisma) {
         const totalNonAnonymousUsers = await prisma.userLookup.count({ where: { anonymous: false } });
         const totalAnonymousUsers = await prisma.userLookup.count({ where: { anonymous: true } });
         const totalOptOutUsers = await prisma.userLookup.count({ where: { fullOptOut: true } });
-        const totalMentions = await prisma.mention.aggregate({
-            sum: {
-                count: true
-            }
-        });
         res.set('Content-Type', 'text/plain');
-        res.send(statsTemplate.replace('<2>', totalUsers).replace('<3>', totalUniqueMentions).replace('<4>', totalNonAnonymousUsers).replace('<5>', totalAnonymousUsers).replace('<6>', totalOptOutUsers).replace('<1>', totalMentions));
+        res.send(statsTemplate.replace('<2>', totalUsers).replace('<3>', totalUniqueMentions).replace('<4>', totalNonAnonymousUsers).replace('<5>', totalAnonymousUsers).replace('<6>', totalOptOutUsers));
     });
 
     app.listen(port, () => {
