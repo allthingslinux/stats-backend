@@ -32,7 +32,7 @@ function expressMain(prisma) {
             }
         });
         res.set('Content-Type', 'text/plain');
-        res.send(statsTemplate.replace('<2>', totalUsers).replace('<3>', totalUniqueMentions).replace('<4>', totalNonAnonymousUsers).replace('<5>', totalAnonymousUsers).replace('<6>', totalOptOutUsers).replace('<1>', totalMentions.sum.count));
+        res.send(statsTemplate.replace('<2>', totalUsers).replace('<3>', totalUniqueMentions).replace('<4>', totalNonAnonymousUsers).replace('<5>', totalAnonymousUsers).replace('<6>', totalOptOutUsers).replace('<1>', totalMentions));
     });
 
     app.listen(port, () => {
