@@ -9,6 +9,17 @@ const { expressMain } = require('./express');
 
 // Initialize Prisma Client
 const prisma = new PrismaClient();
+// Create the Discord client
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences,
+    ],
+});
+
 
 // Utility: Encrypt user ID
 function anonymousId(id) {
@@ -25,10 +36,12 @@ function anonymousId(id) {
 // Utility: Update user in the database or create if not exists
 async function updateUserLookup(prisma, user) {
     if (!user) return;
+    // get user as guild member
+    const member = await user.client.guilds.cache.get(process.env.DISCORD_SERVER_ID)?.members.fetch(user.id);
     await prisma.userLookup.upsert({
         where: { id: BigInt(user.id) },
-        update: { username: user.username, fullOptOut: false },
-        create: { id: BigInt(user.id), username: user.username },
+        update: { username: user.username, fullOptOut: false, roles: member?.roles.cache.map((role) => role.id) },
+        create: { id: BigInt(user.id), username: user.username, roles: member?.roles.cache.map((role) => role.id) },
     });
 }
 
@@ -87,17 +100,6 @@ async function generateGEXF() {
         console.error('Error exporting graph:', err);
     }
 }
-
-// Create the Discord client
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences,
-    ],
-});
 
 // On client ready
 client.once(Events.ClientReady, (readyClient) => {

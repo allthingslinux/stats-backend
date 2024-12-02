@@ -25,5 +25,6 @@ model UserLookup {
   username   String @default("")
   anonymous  Boolean @default(true)
   fullOptOut Boolean @default(false) // this can severely impact the graph functionality and should be used sparingly
+  roles      String[] @default([])
   @@id([id])
 }
