@@ -185,6 +185,32 @@ All user ids are encrypted for privacy.
                 }
                 break;
 
+            case 'forcetoggleoptout': // intended to toggle people who left the server
+                if (message.author.id !== process.env.BOT_OWNER) {
+                    message.channel.send('You are not authorized to use this command.');
+                    return;
+                }
+
+                if (args.length === 0) {
+                    message.channel.send('Please provide a user ID.');
+                    return;
+                }
+
+                const userId2 = args[0];
+
+                const user2 = await prisma.userLookup.findUnique({
+                    where: { id: BigInt(userId2) },
+                });
+
+                if (user2) {
+                    const updated2 = await prisma.userLookup.update({
+                        where: { id: BigInt(userId2) },
+                        data: { fullOptOut: !user2.fullOptOut },
+                    });
+                    message.channel.send(`Opt out mode set to ${updated2.fullOptOut}`);
+                }
+                break
+
             default:
                 message.channel.send(`Unknown command. Type **${process.env.PREFIX}help** for help.`);
         }
