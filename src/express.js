@@ -8,7 +8,7 @@ Total users: <2>
 Total unique mentions: <3>
 Total non-anonymous users: <4>
 Total anonymous users: <5>
-Total users who opted out: <6>
+Total users who left and got opted out: <6>
 
 Endpoints
 =========

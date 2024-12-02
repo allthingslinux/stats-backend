@@ -27,7 +27,7 @@ async function updateUserLookup(prisma, user) {
     if (!user) return;
     await prisma.userLookup.upsert({
         where: { id: BigInt(user.id) },
-        update: { username: user.username },
+        update: { username: user.username, fullOptOut: false },
         create: { id: BigInt(user.id), username: user.username },
     });
 }
@@ -94,6 +94,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences,
     ],
 });
 
@@ -120,7 +122,9 @@ Commands:
 - **help**: Show this message
 - **ping**: Check bot latency
 - **toggleanonymous**: Toggle anonymous mode for yourself in the graph
-- **toggleoptout**: Toggle opting out of the graph entirely **(Please only use this if you REALLY need to)**
+
+You automatically opt in by joining this server. You can opt out by leaving the server (This will hide you from the graph).
+All user ids are encrypted for privacy.
                 `);
                 break;
 
@@ -153,33 +157,6 @@ Commands:
                 // update graph
                 await generateGEXF();
 
-                break;
-
-            case 'toggleoptout':
-                const user2 = await prisma.userLookup.findUnique({
-                    where: { id: BigInt(message.author.id) },
-                });
-
-                if (user2) {
-                    const updated2 = await prisma.userLookup.update({
-                        where: { id: BigInt(message.author.id) },
-                        data: { fullOptOut: !user2.fullOptOut },
-                    });
-                    if (updated2.fullOptOut) {
-                        message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
-                    } else {
-                        message.channel.send(`Full opt-out set to false. **Thank you for contributing to the graph!**`);
-                    }
-                } else {
-                    await prisma.userLookup.create({
-                        data: {
-                            id: BigInt(message.author.id),
-                            username: message.author.username,
-                            fullOptOut: true,
-                        },
-                    });
-                    message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
-                }
                 break;
             
             case 'forcetoggleanonymous': // intended to toggle bots anonymous mode
@@ -217,6 +194,7 @@ Commands:
 // Handle mentions for graph updates
 client.on(Events.MessageCreate, async (message) => {
     if (message.guild?.id !== process.env.DISCORD_SERVER_ID || message.channel?.id !== process.env.DISCORD_CHANNEL_ID) {
+        console.log('Ignoring message from different server or channel');
         return;
     }
 
@@ -244,6 +222,18 @@ client.on(Events.MessageCreate, async (message) => {
         mentionsCounter = 0; // Reset counter
         await generateGEXF();
     }
+});
+
+// on server leave opt out that user
+client.on(Events.GuildMemberRemove, async (member) => {
+    console.log(`User ${member.user.username} left the server. Opting out...`);
+    await prisma.userLookup.update({
+        where: { id: BigInt(member.id) },
+        data: { fullOptOut: true },
+    });
+
+    // update graph
+    await generateGEXF();
 });
 
 // Start the bot
