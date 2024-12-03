@@ -289,9 +289,10 @@ client.on(Events.MessageCreate, async (message) => {
 // on server leave opt out that user
 client.on(Events.GuildMemberRemove, async (member) => {
     console.log(`User ${member.user.username} left the server. Opting out...`);
-    await prisma.userLookup.update({
+    await prisma.userLookup.upsert({
         where: { id: BigInt(member.id) },
-        data: { fullOptOut: true },
+        update: { fullOptOut: true },
+        create: { id: BigInt(member.id), username: member.user.username, fullOptOut: true },
     });
 
     // update graph
