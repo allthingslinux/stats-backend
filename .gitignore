@@ -1,5 +1,6 @@
 docker-compose.yml
 data/graph.gexf
+data/graph-full.gexf
 postgres-data/
 .env
 node_modules/

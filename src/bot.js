@@ -101,6 +101,39 @@ async function generateGEXF() {
     }
 }
 
+async function generateFullGEXF() { // generate full graph with all users
+    await console.log('Generating FULL graph...');
+
+    // Create a new graph
+    const graph = new Graph();
+
+    // Fetch all mentions and user lookups
+    const mentions = await prisma.mention.findMany();
+    const userLookups = await prisma.userLookup.findMany();
+
+    // add nodes to the graph
+    userLookups.forEach((user) => {
+        graph.addNode(user.id, { label: user.username });
+    });
+
+    // add edges to the graph
+    mentions.forEach((mention) => {
+        if (graph.hasEdge(mention.user1Id, mention.user2Id)) {
+            graph.updateEdgeAttribute(mention.user1Id, mention.user2Id, 'weight', (w) => w + mention.count);
+        } else {
+            graph.addEdge(mention.user1Id, mention.user2Id, { weight: mention.count });
+        }
+    });
+
+    // Export the graph
+    try {
+        fs.writeFileSync('data/graph-full.gexf', gexf.write(graph));
+        console.log('Graph successfully exported to data/graph-full.gexf');
+    } catch (err) {
+        console.error('Error exporting graph:', err);
+    }
+}
+
 // On client ready
 client.once(Events.ClientReady, (readyClient) => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
@@ -249,6 +282,7 @@ client.on(Events.MessageCreate, async (message) => {
     if (mentionsCounter >= MENTIONS_THRESHOLD) {
         mentionsCounter = 0; // Reset counter
         await generateGEXF();
+        await generateFullGEXF();
     }
 });
 
