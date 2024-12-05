@@ -40,7 +40,7 @@ async function updateUserLookup(prisma, user) {
     const member = await user.client.guilds.cache.get(process.env.DISCORD_SERVER_ID)?.members.fetch(user.id);
     await prisma.userLookup.upsert({
         where: { id: BigInt(user.id) },
-        update: { username: user.username, fullOptOut: false, roles: member?.roles.cache.map((role) => role.id) },
+        update: { username: user.username, roles: member?.roles.cache.map((role) => role.id) },
         create: { id: BigInt(user.id), username: user.username, roles: member?.roles.cache.map((role) => role.id) },
     });
 }
@@ -220,6 +220,32 @@ All user ids are encrypted for privacy.
                 }
                 break;
 
+            case 'toggleoptout':
+                const user4 = await prisma.userLookup.findUnique({
+                    where: { id: BigInt(message.author.id) },
+                });
+                if (user4) {
+                    const updated2 = await prisma.userLookup.update({
+                        where: { id: BigInt(message.author.id) },
+                        data: { fullOptOut: !user4.fullOptOut },
+                    });
+                    if (updated2.fullOptOut) {
+                        message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
+                    } else {
+                        message.channel.send(`Full opt-out set to false. **Thank you for contributing to the graph!**`);
+                    }
+                } else {
+                    await prisma.userLookup.create({
+                        data: {
+                            id: BigInt(message.author.id),
+                            username: message.author.username,
+                            fullOptOut: true,
+                        },
+                    });
+                    message.channel.send(`Full opt-out set to true. **Please remember all data is fully anonymized and encrypted. Please only use this if you REALLY need to.**`);
+                }
+                break;
+
             case 'forcetoggleoptout': // intended to toggle people who left the server
                 if (message.author.id !== process.env.BOT_OWNER) {
                     message.channel.send('You are not authorized to use this command.');
@@ -293,6 +319,19 @@ client.on(Events.GuildMemberRemove, async (member) => {
         where: { id: BigInt(member.id) },
         update: { fullOptOut: true },
         create: { id: BigInt(member.id), username: member.user.username, fullOptOut: true },
+    });
+
+    // update graph
+    await generateGEXF();
+});
+
+// on server join opt in that user
+client.on(Events.GuildMemberAdd, async (member) => {
+    console.log(`User ${member.user.username} joined the server. Opting in...`);
+    await prisma.userLookup.upsert({
+        where: { id: BigInt(member.id) },
+        update: { fullOptOut: false },
+        create: { id: BigInt(member.id), username: member.user.username, fullOptOut: false },
     });
 
     // update graph
