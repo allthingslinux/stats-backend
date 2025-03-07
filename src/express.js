@@ -3,7 +3,6 @@ const cors = require('cors')
 const { Client } = require('discord.js');
 const app = express()
 const port = 8000
-app.use(cors())
 
 const statsTemplate = `Statistics
 ==========
@@ -39,6 +38,7 @@ function expressMain(prisma, client) {
     });
 
     app.use(express.json()); // Ensure this middleware is added
+    app.use(cors());
 
     app.post('/api/roles', async (req, res) => {
         const userId = req.body?.user_id; // Safely access user_id
