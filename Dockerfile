@@ -1,8 +1,9 @@
-FROM node:22-alpine
+FROM node:23-alpine
 WORKDIR /app
 COPY package.json package.json
 COPY package-lock.json package-lock.json
 
+RUN apk add --no-cache openssl 
 RUN npm install
 
 # copy src/, prisma/, .env

@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,11 +14,9 @@ model Mention {
   @@id([user1Id, user2Id])
 }
 
-model UserLookup {
-  id         BigInt
-  username   String @default("")
-  anonymous  Boolean @default(true)
-  fullOptOut Boolean @default(false) // this can severely impact the graph functionality and should be used sparingly
-  roles      String[] @default([])
-  @@id([id])
+model UserLookup { // all users in this must have opted in, on opt out all data is deleted
+  id          BigInt  @id // this field is public on the website
+  avatar      String  @default("https://cdn.discordapp.com/embed/avatars/0.png") // this field is public on the website
+  displayname String  @default("Unknown") // this field is public on the website
+  username    String  @default("unknown") // this field is public on the website
 }
