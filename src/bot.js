@@ -172,6 +172,59 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 await generateGEXF();
                 break;
 
+            case 'forcetoggleoptin':
+                // check if user id is bot owner
+                if (message.author.id !== process.env.BOT_OWNER) {
+                    message.channel.send("You are not authorized to use this command.");
+                    return;
+                }
+
+                // check if user they are trying to toggle is not a bot, if so do not allow
+                // to prevent force toggling legitimate users
+                if (message.mentions.users.size === 0) {
+                    message.channel.send("You must mention a user to toggle their opt-in status.");
+                    return;
+                }
+                
+                const toggledUser = message.mentions.users.first();
+                // Only allow toggling if the mentioned user is a bot
+                if (!toggledUser.bot) {
+                    message.channel.send("You can only force toggle bot statuses to prevent abuse.");
+                    return;
+                }
+
+                const toggledUserRecord = await prisma.userLookup.findUnique({
+                    where: { id: BigInt(toggledUser.id) }
+                });
+
+                if (toggledUserRecord) {
+                    await prisma.userLookup.delete({ where: { id: BigInt(toggledUser.id) } });
+                    await prisma.mention.deleteMany({
+                        where: {
+                            OR: [
+                                { user1Id: BigInt(toggledUser.id) },
+                                { user2Id: BigInt(toggledUser.id) }
+                            ]
+                        }
+                    });
+                    message.channel.send(`Force opt-out for ${toggledUser.username} completed.`);
+                } else {
+                    const member = await message.client.guilds.cache
+                        .get(process.env.DISCORD_SERVER_ID)
+                        ?.members.fetch(toggledUser.id);
+                    const avatar = member ? member.user.displayAvatarURL() : "https://cdn.discordapp.com/embed/avatars/0.png";
+                    const displayname = member ? member.displayName : toggledUser.username;
+                    await prisma.userLookup.upsert({
+                        where: { id: BigInt(toggledUser.id) },
+                        update: { username: toggledUser.username, displayname, avatar },
+                        create: { id: BigInt(toggledUser.id), username: toggledUser.username, displayname, avatar },
+                    });
+                    message.channel.send(`Force opt-in for ${toggledUser.username} completed.`);
+                }
+
+                await generateGEXF();
+                break;
+
             case 'ping':
                 message.channel.send(`Pong! Latency is ${Date.now() - message.createdTimestamp}ms.`);
                 break;
