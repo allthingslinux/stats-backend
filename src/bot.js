@@ -225,6 +225,37 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 await generateGEXF();
                 break;
 
+            case 'forceoptout':
+                // check if user id is bot owner
+                if (message.author.id !== process.env.BOT_OWNER) {
+                    message.channel.send("You are not authorized to use this command.");
+                    return;
+                }
+
+                // check if user they are trying to toggle is not a bot, if so do not allow
+                // to prevent force toggling legitimate users
+                if (message.mentions.users.size === 0) {
+                    message.channel.send("You must mention a user to force opt-out.");
+                    return;
+                }
+
+                // Delete the user from the database
+                await prisma.userLookup.delete({
+                    where: { id: BigInt(forceOptOutUser.id) }
+                }).catch(e => console.error("User not opted in:", e));
+
+                // Delete any mention data involving the user
+                await prisma.mention.deleteMany({
+                    where: {
+                        OR: [
+                            { user1Id: BigInt(forceOptOutUser.id) },
+                            { user2Id: BigInt(forceOptOutUser.id) }
+                        ]
+                    }
+                });
+                message.channel.send(`Force opt-out for ${forceOptOutUser.username} completed.`);
+                await generateGEXF();
+                break;
             case 'ping':
                 message.channel.send(`Pong! Latency is ${Date.now() - message.createdTimestamp}ms.`);
                 break;
