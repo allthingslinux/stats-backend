@@ -239,6 +239,8 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                     return;
                 }
 
+                const forceOptOutUser = message.mentions.users.first();
+
                 // Delete the user from the database
                 await prisma.userLookup.delete({
                     where: { id: BigInt(forceOptOutUser.id) }
