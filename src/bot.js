@@ -13,9 +13,12 @@ const writeApi = influx.getWriteApi(process.env.INFLUXDB_ORG, process.env.INFLUX
 // Initialize Prisma Client
 const prisma = new PrismaClient();
 
-// Global counters for mentions
+// Global counters
 let mentionsCounter = 0;
 const MENTIONS_THRESHOLD = 15;
+let totalMessagesProcessed = 0; // Count every non-bot message processed
+let commandCount = 0;           // Count every command processed
+let graphGenerationCounter = 0; // Count how many times the graph is generated
 
 // Create the Discord client
 const client = new Client({
@@ -26,6 +29,13 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences,
     ],
+});
+
+// Global listener to count all non-bot messages
+client.on(Events.MessageCreate, async (message) => {
+    if (!message.author.bot) {
+        totalMessagesProcessed++;
+    }
 });
 
 // Utility: Update user info only if the user is opted in (exists in UserLookup)
@@ -49,27 +59,42 @@ async function updateUserLookup(prisma, user) {
     console.log(`[UserLookup] Updated data for user ${user.username}`);
 }
 
-// Log metrics to InfluxDB
+// Log global metrics to InfluxDB with additional stats
 async function logMetrics() {
     try {
         const optedInCount = await prisma.userLookup.count();
         
-        // Sum of all mention counts (across all mention records)
+        // Aggregate mention data: sum, min, and max of counts
         const mentionAggregate = await prisma.mention.aggregate({
             _sum: { count: true },
+            _min: { count: true },
+            _max: { count: true },
         });
         const totalMentions = mentionAggregate._sum.count || 0;
+        const minMentions = mentionAggregate._min.count || 0;
+        const maxMentions = mentionAggregate._max.count || 0;
         
         // Unique mention combinations (each record is a unique pair)
         const uniqueMentionCombinations = await prisma.mention.count();
+        const avgMentionsPerPair = uniqueMentionCombinations > 0 ? totalMentions / uniqueMentionCombinations : 0;
+        const avgMentionsPerUser = optedInCount > 0 ? totalMentions / optedInCount : 0;
         
         const guild = client.guilds.cache.get(process.env.DISCORD_SERVER_ID);
         const totalUsers = guild ? guild.memberCount : 0;
+        const mentionDensity = totalUsers > 0 ? totalMentions / totalUsers : 0;
         
         console.log(`[Metrics] Opted in users: ${optedInCount}`);
         console.log(`[Metrics] Total users in guild: ${totalUsers}`);
         console.log(`[Metrics] Total mentions count: ${totalMentions}`);
         console.log(`[Metrics] Unique mention combinations: ${uniqueMentionCombinations}`);
+        console.log(`[Metrics] Avg mentions per pair: ${avgMentionsPerPair}`);
+        console.log(`[Metrics] Min mentions in any pair: ${minMentions}`);
+        console.log(`[Metrics] Max mentions in any pair: ${maxMentions}`);
+        console.log(`[Metrics] Avg mentions per opted-in user: ${avgMentionsPerUser}`);
+        console.log(`[Metrics] Mention density (mentions/guild user): ${mentionDensity}`);
+        console.log(`[Metrics] Total messages processed: ${totalMessagesProcessed}`);
+        console.log(`[Metrics] Total commands processed: ${commandCount}`);
+        console.log(`[Metrics] Graph generation count: ${graphGenerationCounter}`);
 
         const point = new Point('discord_metrics')
             .tag('server', process.env.DISCORD_SERVER_ID)
@@ -77,18 +102,73 @@ async function logMetrics() {
             .intField('guild_total_users', totalUsers)
             .intField('total_mentions', totalMentions)
             .intField('unique_mention_combinations', uniqueMentionCombinations)
+            .floatField('avg_mentions_per_pair', avgMentionsPerPair)
+            .intField('min_mentions', minMentions)
+            .intField('max_mentions', maxMentions)
+            .floatField('avg_mentions_per_user', avgMentionsPerUser)
+            .floatField('mention_density', mentionDensity)
+            .intField('total_messages_processed', totalMessagesProcessed)
+            .intField('command_count', commandCount)
+            .intField('graph_generation_count', graphGenerationCounter)
             .timestamp(new Date());
         writeApi.writePoint(point);
         await writeApi.flush();
-        console.log('[Metrics] Metrics logged to InfluxDB successfully.');
+        console.log('[Metrics] Global metrics logged to InfluxDB successfully.');
     } catch (error) {
-        console.error('[Metrics] Error logging metrics:', error);
+        console.error('[Metrics] Error logging global metrics:', error);
     }
 }
 
-// Generate the GEXF graph
+// Log user-specific metrics: total mentions, distinct partners, and average mentions per partner
+async function logUserMetrics() {
+    try {
+        const users = await prisma.userLookup.findMany();
+        for (const user of users) {
+            // Total mentions where the user is involved (sum of counts)
+            const userMentionAggregate = await prisma.mention.aggregate({
+                _sum: { count: true },
+                where: {
+                    OR: [
+                        { user1Id: BigInt(user.id) },
+                        { user2Id: BigInt(user.id) }
+                    ]
+                }
+            });
+            const userTotalMentions = userMentionAggregate._sum.count || 0;
+            // Count of distinct mention records (i.e. distinct partners)
+            const userDistinctPartners = await prisma.mention.count({
+                where: {
+                    OR: [
+                        { user1Id: BigInt(user.id) },
+                        { user2Id: BigInt(user.id) }
+                    ]
+                }
+            });
+            const userAvgMentionsPerPartner = userDistinctPartners > 0 ? userTotalMentions / userDistinctPartners : 0;
+            
+            console.log(`[UserMetrics] ${user.username}: total_mentions = ${userTotalMentions}, distinct_partners = ${userDistinctPartners}, avg_mentions_per_partner = ${userAvgMentionsPerPartner}`);
+            
+            const point = new Point('discord_user_metrics')
+                .tag('user_id', user.id.toString())
+                .tag('username', user.username)
+                .intField('user_total_mentions', userTotalMentions)
+                .intField('user_distinct_partners', userDistinctPartners)
+                .floatField('user_avg_mentions_per_partner', userAvgMentionsPerPartner)
+                .timestamp(new Date());
+            writeApi.writePoint(point);
+        }
+        await writeApi.flush();
+        console.log('[UserMetrics] User-specific metrics logged to InfluxDB successfully.');
+    } catch (error) {
+        console.error('[UserMetrics] Error logging user-specific metrics:', error);
+    }
+}
+
+// Generate the GEXF graph and increment graph generation counter
 async function generateGEXF() {
     console.log('Generating graph...');
+    graphGenerationCounter++; // Increment the graph generation counter
+
     // Create a new graph
     const graph = new Graph();
 
@@ -135,7 +215,9 @@ async function generateGEXF() {
     } catch (err) {
         console.error('Error exporting graph:', err);
     }
+    // Log both global and user-specific metrics
     await logMetrics();
+    await logUserMetrics();
 }
 
 // On client ready
@@ -143,14 +225,16 @@ client.once(Events.ClientReady, (readyClient) => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
     readyClient.user.setActivity(process.env.ACTIVITY);
     expressMain(prisma);
-    logMetrics(); // Log metrics on startup
+    logMetrics();     // Log global metrics on startup
+    logUserMetrics(); // Log user-specific metrics on startup
 });
 
-// Handle commands
+// Handle commands and increment command count
 client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
     if (message.content.startsWith(process.env.PREFIX)) {
+        commandCount++; // Increment command counter
         const args = message.content.slice(process.env.PREFIX.length).trim().split(/ +/);
         const command = args.shift().toLowerCase();
 
@@ -306,6 +390,7 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 console.log(`[ForceOptOut] Force opt-out for ${forceOptOutUser.username} completed.`);
                 await generateGEXF();
                 break;
+
             case 'ping':
                 const latency = Date.now() - message.createdTimestamp;
                 message.channel.send(`Pong! Latency is ${latency}ms.`);
@@ -368,6 +453,7 @@ client.on(Events.MessageCreate, async (message) => {
     
     // Log metrics on each mention update
     await logMetrics();
+    await logUserMetrics();
 });
 
 // On server leave, remove the user's data
