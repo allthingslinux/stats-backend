@@ -5,9 +5,17 @@ const gexf = require('graphology-gexf');
 const fs = require('fs');
 const crypto = require('crypto');
 const { expressMain } = require('./express');
+const { InfluxDB, Point } = require('@influxdata/influxdb-client');
+
+const influx = new InfluxDB({ url: process.env.INFLUXDB_URL, token: process.env.INFLUXDB_TOKEN });
+const writeApi = influx.getWriteApi(process.env.INFLUXDB_ORG, process.env.INFLUXDB_BUCKET);
 
 // Initialize Prisma Client
 const prisma = new PrismaClient();
+
+// Global counters for mentions
+let mentionsCounter = 0;
+const MENTIONS_THRESHOLD = 15;
 
 // Create the Discord client
 const client = new Client({
@@ -38,16 +46,49 @@ async function updateUserLookup(prisma, user) {
         where: { id: BigInt(user.id) },
         data: { username: user.username, displayname, avatar },
     });
+    console.log(`[UserLookup] Updated data for user ${user.username}`);
 }
 
-// Counter for mentions processed
-let mentionsCounter = 0;
-const MENTIONS_THRESHOLD = 15;
+// Log metrics to InfluxDB
+async function logMetrics() {
+    try {
+        const optedInCount = await prisma.userLookup.count();
+        
+        // Sum of all mention counts (across all mention records)
+        const mentionAggregate = await prisma.mention.aggregate({
+            _sum: { count: true },
+        });
+        const totalMentions = mentionAggregate._sum.count || 0;
+        
+        // Unique mention combinations (each record is a unique pair)
+        const uniqueMentionCombinations = await prisma.mention.count();
+        
+        const guild = client.guilds.cache.get(process.env.DISCORD_SERVER_ID);
+        const totalUsers = guild ? guild.memberCount : 0;
+        
+        console.log(`[Metrics] Opted in users: ${optedInCount}`);
+        console.log(`[Metrics] Total users in guild: ${totalUsers}`);
+        console.log(`[Metrics] Total mentions count: ${totalMentions}`);
+        console.log(`[Metrics] Unique mention combinations: ${uniqueMentionCombinations}`);
+
+        const point = new Point('discord_metrics')
+            .tag('server', process.env.DISCORD_SERVER_ID)
+            .intField('opted_in_users', optedInCount)
+            .intField('guild_total_users', totalUsers)
+            .intField('total_mentions', totalMentions)
+            .intField('unique_mention_combinations', uniqueMentionCombinations)
+            .timestamp(new Date());
+        writeApi.writePoint(point);
+        await writeApi.flush();
+        console.log('[Metrics] Metrics logged to InfluxDB successfully.');
+    } catch (error) {
+        console.error('[Metrics] Error logging metrics:', error);
+    }
+}
 
 // Generate the GEXF graph
 async function generateGEXF() {
     console.log('Generating graph...');
-
     // Create a new graph
     const graph = new Graph();
 
@@ -94,6 +135,7 @@ async function generateGEXF() {
     } catch (err) {
         console.error('Error exporting graph:', err);
     }
+    await logMetrics();
 }
 
 // On client ready
@@ -101,6 +143,7 @@ client.once(Events.ClientReady, (readyClient) => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
     readyClient.user.setActivity(process.env.ACTIVITY);
     expressMain(prisma);
+    logMetrics(); // Log metrics on startup
 });
 
 // Handle commands
@@ -127,11 +170,13 @@ You automatically opt out when you leave the server. Your data will also be remo
 You can view the graph at https://stats.atl.dev/
 Privacy policy: https://stats-backend.atl.dev/privacy
                 `);
+                console.log('[Command] Help command executed.');
                 break;
 
             case 'optin':
                 if (await prisma.userLookup.findUnique({ where: { id: BigInt(message.author.id) } })) {
                     message.channel.send("You are already opted in!");
+                    console.log(`[OptIn] User ${message.author.username} attempted to opt in but is already opted in.`);
                     return;
                 }
                 // Add the user to the database
@@ -146,12 +191,14 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                     create: { id: BigInt(message.author.id), username: message.author.username, displayname, avatar },
                 });
                 message.channel.send("You have successfully opted in to the graph!");
+                console.log(`[OptIn] User ${message.author.username} opted in.`);
                 await generateGEXF();
                 break;
 
             case 'optout':
                 if (!await prisma.userLookup.findUnique({ where: { id: BigInt(message.author.id) } })) {
                     message.channel.send("You are already opted out!");
+                    console.log(`[OptOut] User ${message.author.username} attempted to opt out but was already opted out.`);
                     return;
                 }
                 // Delete the user from the database
@@ -169,6 +216,7 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                     }
                 });
                 message.channel.send("You have successfully opted out, and your data has been removed from the graph.");
+                console.log(`[OptOut] User ${message.author.username} opted out.`);
                 await generateGEXF();
                 break;
 
@@ -176,11 +224,10 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 // check if user id is bot owner
                 if (message.author.id !== process.env.BOT_OWNER) {
                     message.channel.send("You are not authorized to use this command.");
+                    console.log('[ForceToggle] Unauthorized access attempt.');
                     return;
                 }
 
-                // check if user they are trying to toggle is not a bot, if so do not allow
-                // to prevent force toggling legitimate users
                 if (message.mentions.users.size === 0) {
                     message.channel.send("You must mention a user to toggle their opt-in status.");
                     return;
@@ -190,6 +237,7 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 // Only allow toggling if the mentioned user is a bot
                 if (!toggledUser.bot) {
                     message.channel.send("You can only force toggle bot statuses to prevent abuse.");
+                    console.log(`[ForceToggle] Attempted to toggle non-bot user ${toggledUser.username}.`);
                     return;
                 }
 
@@ -208,6 +256,7 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                         }
                     });
                     message.channel.send(`Force opt-out for ${toggledUser.username} completed.`);
+                    console.log(`[ForceToggle] Force opt-out for ${toggledUser.username} completed.`);
                 } else {
                     const member = await message.client.guilds.cache
                         .get(process.env.DISCORD_SERVER_ID)
@@ -220,6 +269,7 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                         create: { id: BigInt(toggledUser.id), username: toggledUser.username, displayname, avatar },
                     });
                     message.channel.send(`Force opt-in for ${toggledUser.username} completed.`);
+                    console.log(`[ForceToggle] Force opt-in for ${toggledUser.username} completed.`);
                 }
 
                 await generateGEXF();
@@ -229,11 +279,10 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 // check if user id is bot owner
                 if (message.author.id !== process.env.BOT_OWNER) {
                     message.channel.send("You are not authorized to use this command.");
+                    console.log('[ForceOptOut] Unauthorized access attempt.');
                     return;
                 }
 
-                // check if user they are trying to toggle is not a bot, if so do not allow
-                // to prevent force toggling legitimate users
                 if (message.mentions.users.size === 0) {
                     message.channel.send("You must mention a user to force opt-out.");
                     return;
@@ -241,12 +290,10 @@ Privacy policy: https://stats-backend.atl.dev/privacy
 
                 const forceOptOutUser = message.mentions.users.first();
 
-                // Delete the user from the database
                 await prisma.userLookup.delete({
                     where: { id: BigInt(forceOptOutUser.id) }
                 }).catch(e => console.error("User not opted in:", e));
 
-                // Delete any mention data involving the user
                 await prisma.mention.deleteMany({
                     where: {
                         OR: [
@@ -256,21 +303,24 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                     }
                 });
                 message.channel.send(`Force opt-out for ${forceOptOutUser.username} completed.`);
+                console.log(`[ForceOptOut] Force opt-out for ${forceOptOutUser.username} completed.`);
                 await generateGEXF();
                 break;
             case 'ping':
-                message.channel.send(`Pong! Latency is ${Date.now() - message.createdTimestamp}ms.`);
+                const latency = Date.now() - message.createdTimestamp;
+                message.channel.send(`Pong! Latency is ${latency}ms.`);
+                console.log(`[Ping] Responded with latency ${latency}ms.`);
                 break;
 
             default:
                 message.channel.send(`Unknown command. Type **${process.env.PREFIX}help** for help.`);
+                console.log(`[Command] Unknown command received: ${command}`);
         }
     }
 });
 
 // Handle mentions for graph updates (only for opted-in users)
 client.on(Events.MessageCreate, async (message) => {
-    // Process only if the message is from the specified server and channel
     if (message.guild?.id !== process.env.DISCORD_SERVER_ID || message.channel?.id !== process.env.DISCORD_CHANNEL_ID) {
         console.log('Ignoring message from different server or channel');
         return;
@@ -288,7 +338,6 @@ client.on(Events.MessageCreate, async (message) => {
     }
     await updateUserLookup(prisma, message.author);
 
-    // Process each mentioned user only if they are opted in
     for (const user of message.mentions.users.values()) {
         const mentionedRecord = await prisma.userLookup.findUnique({
             where: { id: BigInt(user.id) }
@@ -307,15 +356,18 @@ client.on(Events.MessageCreate, async (message) => {
             update: { count: { increment: 1 } },
             create: { user1Id, user2Id, count: 1 },
         });
+        console.log(`[Mentions] Processed mention from ${message.author.username} to ${user.username}`);
     }
 
-    // Increment counter and generate graph if threshold is met
     mentionsCounter++;
-    console.log(`Mentions processed: ${mentionsCounter}`);
+    console.log(`Mentions processed counter: ${mentionsCounter}`);
     if (mentionsCounter >= MENTIONS_THRESHOLD) {
         mentionsCounter = 0;
         await generateGEXF();
     }
+    
+    // Log metrics on each mention update
+    await logMetrics();
 });
 
 // On server leave, remove the user's data
@@ -332,6 +384,7 @@ client.on(Events.GuildMemberRemove, async (member) => {
             ]
         }
     });
+    console.log(`[GuildRemove] Removed data for user ${member.user.username}`);
     await generateGEXF();
 });
 
