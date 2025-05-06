@@ -247,6 +247,7 @@ Commands:
 - **ping**: Check bot latency
 - **optin**: Opt in to the graph (you are opted out by default)
 - **optout**: Opt out of the graph (all your data will be removed)
+${message.author.id === process.env.BOT_OWNER ? "- **migratestats <oldUserId> <newUserId>**: (Bot Owner Only) Migrate all stats from oldUser to newUser." : ""}
 
 When you opt out all your data will be removed from the graph.
 You automatically opt out when you leave the server. Your data will also be removed when you leave.
@@ -389,6 +390,107 @@ Privacy policy: https://stats-backend.atl.dev/privacy
                 message.channel.send(`Force opt-out for ${forceOptOutUser.username} completed.`);
                 console.log(`[ForceOptOut] Force opt-out for ${forceOptOutUser.username} completed.`);
                 await generateGEXF();
+                break;
+            
+            case 'migratestats':
+                if (message.author.id !== process.env.BOT_OWNER) {
+                    message.channel.send("You are not authorized to use this command.");
+                    console.log('[MigrateStats] Unauthorized access attempt.');
+                    return;
+                }
+
+                if (args.length !== 2) {
+                    message.channel.send("Usage: migratestats <oldUserId> <newUserId>");
+                    return;
+                }
+
+                const oldUserIdString = args[0];
+                const newUserIdString = args[1];
+
+                if (isNaN(oldUserIdString) || isNaN(newUserIdString)) {
+                    message.channel.send("User IDs must be numbers.");
+                    return;
+                }
+
+                const oldUserIdBigInt = BigInt(oldUserIdString);
+                const newUserIdBigInt = BigInt(newUserIdString);
+
+                if (oldUserIdBigInt === newUserIdBigInt) {
+                    message.channel.send("Old and new user IDs cannot be the same.");
+                    return;
+                }
+
+                try {
+                    const oldUserLookup = await prisma.userLookup.findUnique({ where: { id: oldUserIdBigInt } });
+                    if (!oldUserLookup) {
+                        message.channel.send(`Old user ID ${oldUserIdString} not found among opted-in users.`);
+                        return;
+                    }
+
+                    const newMember = await message.client.guilds.cache.get(process.env.DISCORD_SERVER_ID)?.members.fetch(newUserIdString).catch(() => null);
+                    if (!newMember) {
+                        message.channel.send(`Could not fetch new user details for ID ${newUserIdString} from Discord. Make sure the ID is correct and the user is in this server.`);
+                        return;
+                    }
+                    const newAvatar = newMember.user.displayAvatarURL();
+                    const newDisplayname = newMember.displayName;
+                    const newUsername = newMember.user.username;
+
+                    // Upsert new user's details
+                    await prisma.userLookup.upsert({
+                        where: { id: newUserIdBigInt },
+                        update: { username: newUsername, displayname: newDisplayname, avatar: newAvatar },
+                        create: { id: newUserIdBigInt, username: newUsername, displayname: newDisplayname, avatar: newAvatar },
+                    });
+
+                    // Migrate mentions
+                    const mentionsToMigrate = await prisma.mention.findMany({
+                        where: {
+                            OR: [
+                                { user1Id: oldUserIdBigInt },
+                                { user2Id: oldUserIdBigInt },
+                            ],
+                        },
+                    });
+
+                    for (const mention of mentionsToMigrate) {
+                        // Delete the old mention first
+                        await prisma.mention.delete({
+                            where: { user1Id_user2Id: { user1Id: mention.user1Id, user2Id: mention.user2Id } },
+                        });
+
+                        let u1 = mention.user1Id;
+                        let u2 = mention.user2Id;
+
+                        if (u1 === oldUserIdBigInt) u1 = newUserIdBigInt;
+                        if (u2 === oldUserIdBigInt) u2 = newUserIdBigInt;
+
+                        // If migration results in a self-mention (u1 === u2), skip adding it back
+                        if (u1 === u2) {
+                            console.log(`[MigrateStats] Skipped self-mention for user ${newUserIdString} from original mention between ${mention.user1Id} and ${mention.user2Id} with count ${mention.count}`);
+                            continue;
+                        }
+                        
+                        const [finalUser1Id, finalUser2Id] = [u1, u2].sort((a, b) => (a < b ? -1 : 1));
+
+                        await prisma.mention.upsert({
+                            where: { user1Id_user2Id: { user1Id: finalUser1Id, user2Id: finalUser2Id } },
+                            update: { count: { increment: mention.count } },
+                            create: { user1Id: finalUser1Id, user2Id: finalUser2Id, count: mention.count },
+                        });
+                    }
+
+                    // Delete old user's lookup record
+                    await prisma.userLookup.delete({ where: { id: oldUserIdBigInt } });
+
+                    message.channel.send(`Successfully migrated stats from ${oldUserIdString} to ${newUserIdString}.`);
+                    console.log(`[MigrateStats] Successfully migrated stats from ${oldUserIdString} to ${newUserIdString}.`);
+                    await generateGEXF();
+
+                } catch (error) {
+                    console.error('[MigrateStats] Error during migration:', error);
+                    message.channel.send("An error occurred during migration. Check the logs.");
+                }
                 break;
 
             case 'ping':
