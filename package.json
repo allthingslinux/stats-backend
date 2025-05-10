@@ -15,7 +15,7 @@
     "cors": "^2.8.5",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.5",
-    "express": "^4.21.1",
+    "express": "^4.21.2",
     "graphology": "^0.25.4",
     "graphology-gexf": "^0.13.2",
     "prisma": "^5.22.0"
